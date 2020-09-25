@@ -1,0 +1,17 @@
+{
+  "name": "livestatus-microservice",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cuid": "^2.1.8",
+    "faye": "^1.4.0",
+    "ioredis": "^4.17.3"
+  }
+}
