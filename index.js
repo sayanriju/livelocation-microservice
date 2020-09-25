@@ -22,7 +22,7 @@ bayeux.attach(server)
 /** Send live status of all currently alive users in the beginning, when someone subscribes */
 bayeux.on("subscribe", async (clientId, channel) => {
   try {
-    console.log("==> subscribed to channel........", clientId)
+    console.log("==> subscribed to channel........", channel, clientId)
     if (channel !== "/livestatus") return
     const timestamp = Date.now()
     const alives = await store.keys("user::*")
