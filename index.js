@@ -2,6 +2,7 @@
 const http = require("http")
 const Faye = require("faye")
 const Redis = require("ioredis")
+const log = require("book")
 
 const {
   BASE_URL = "http://localhost:3000/",
@@ -25,13 +26,13 @@ bayeux.attach(server)
 /** Send live status of all currently alive users in the beginning, when someone subscribes */
 bayeux.on("subscribe", async (clientId, channel) => {
   try {
-    console.log("==> subscribed to channel........", channel, clientId)
+    log.debug("==> client id %s subscribed to channel %s", clientId, channel)
     if (channel !== LIVESTATUS_CHANNEL) return
     const timestamp = Date.now()
     const alives = await store.keys(`${KEY_NAMESPACE}*`)
     alives.forEach((userId) => faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp }))
   } catch (e) {
-    console.log("==> ERR (1): ", e);
+    log.error(e, "[[Subscription ERR]] ")
   }
 })
 
@@ -40,7 +41,7 @@ faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) =>
   try {
     const timestamp = Date.now()
     const userId = channel.replace(`${HEARTBEAT_CHANNEL}/`, "")
-    console.log("==> heartbeat rcvd from userid ", userId)
+    log.info("==> heartbeat rcvd from userid %s", userId)
     const key = `${KEY_NAMESPACE}${userId}`
     const keyExists = await store.get(key)
     if (keyExists === null) { // new Key
@@ -50,17 +51,17 @@ faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) =>
       await store.expire(key, KEEP_ALIVE_FOR) // live for some more!
     }
   } catch (e) {
-    console.log("==> ERR (2): ", e);
+    log.err(e, "[[Hearbeat ERR]]")
   }
 })
 
 /** Tell when an user goes offline */
 pubsub.subscribe("__keyevent@0__:expired")
 pubsub.on("message", (channel, message) => {
-  console.log("==> redis key deleted........")
   const timestamp = Date.now()
   const userId = message.replace(KEY_NAMESPACE, "")
   faye.publish(LIVESTATUS_CHANNEL, { userId, status: "offline", timestamp })
+  log.info("==> redis key deleted for userId %s", userId)
 })
 
 
