@@ -22,6 +22,11 @@ const pubsub = new Redis(REDIS_CONN_STRING)
 const server = http.createServer()
 bayeux.attach(server)
 
+/** Ensure Redis config is set to enable keyspace notifs */
+store.on("ready", async () => {
+  await store.config("SET", "notify-keyspace-events", "Ex")
+})
+
 
 /** Send live status of all currently alive users in the beginning, when someone subscribes */
 bayeux.on("subscribe", async (clientId, channel) => {
