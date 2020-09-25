@@ -8,4 +8,4 @@ const userId = process.argv[2] || cuid.slug()
 log.info(`==> User ${userId} comes online.....`)
 setInterval(() => {
   faye.publish(`/heartbeat/${userId}`, { timestamp: Date.now() })
-}, 3 * 1000)
+}, 5 * 1000)

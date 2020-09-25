@@ -53,7 +53,7 @@ faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) =>
       await store.set(key, 1, "EX", KEEP_ALIVE_FOR + LEEWAY_TIME)
       faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp })
     } else { // existing Key
-      await store.expire(key, KEEP_ALIVE_FOR) // live for some more!
+      await store.expire(key, KEEP_ALIVE_FOR + LEEWAY_TIME) // live for some more!
     }
   } catch (e) {
     log.err(e, "[[Hearbeat ERR]]")
