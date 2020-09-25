@@ -8,6 +8,9 @@ const {
   REDIS_CONN_STRING = "",
   KEEP_ALIVE_FOR = 5, // seconds
   LEEWAY_TIME = 1, // seconds
+  LIVESTATUS_CHANNEL = "/livestatus",
+  HEARTBEAT_CHANNEL = "/heartbeat",
+  KEY_NAMESPACE = "user:"
 } = process.env
 
 const bayeux = new Faye.NodeAdapter({ mount: "/" })
@@ -23,26 +26,26 @@ bayeux.attach(server)
 bayeux.on("subscribe", async (clientId, channel) => {
   try {
     console.log("==> subscribed to channel........", channel, clientId)
-    if (channel !== "/livestatus") return
+    if (channel !== LIVESTATUS_CHANNEL) return
     const timestamp = Date.now()
-    const alives = await store.keys("user::*")
-    alives.forEach((userId) => faye.publish("/livestatus", { userId, status: "online", timestamp }))
+    const alives = await store.keys(`${KEY_NAMESPACE}*`)
+    alives.forEach((userId) => faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp }))
   } catch (e) {
     console.log("==> ERR (1): ", e);
   }
 })
 
 /** Handle heartbeats to keep users alive */
-faye.subscribe("/heartbeat/*").withChannel(async (channel, message) => {
+faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) => {
   try {
     const timestamp = Date.now()
-    const userId = channel.replace("/heartbeat/", "")
+    const userId = channel.replace(`${HEARTBEAT_CHANNEL}/`, "")
     console.log("==> heartbeat rcvd from userid ", userId)
-    const key = `user::${userId}`
+    const key = `${KEY_NAMESPACE}${userId}`
     const keyExists = await store.get(key)
     if (keyExists === null) { // new Key
       await store.set(key, 1, "EX", KEEP_ALIVE_FOR + LEEWAY_TIME)
-      faye.publish("/livestatus", { userId, status: "online", timestamp })
+      faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp })
     } else { // existing Key
       await store.expire(key, KEEP_ALIVE_FOR) // live for some more!
     }
@@ -56,8 +59,8 @@ pubsub.subscribe("__keyevent@0__:expired")
 pubsub.on("message", (channel, message) => {
   console.log("==> redis key deleted........")
   const timestamp = Date.now()
-  const userId = message.replace("user::", "")
-  faye.publish("/livestatus", { userId, status: "offline", timestamp })
+  const userId = message.replace(KEY_NAMESPACE, "")
+  faye.publish(LIVESTATUS_CHANNEL, { userId, status: "offline", timestamp })
 })
 
 
