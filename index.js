@@ -1,4 +1,3 @@
-/* eslint-disable no-unused-vars */
 const http = require("http")
 const Faye = require("faye")
 const Redis = require("ioredis")
@@ -15,7 +14,7 @@ const {
 } = process.env
 
 const bayeux = new Faye.NodeAdapter({ mount: "/" })
-const faye = new Faye.Client(BASE_URL)
+const faye = bayeux.getClient()
 const store = new Redis(REDIS_CONN_STRING)
 const pubsub = new Redis(REDIS_CONN_STRING)
 
