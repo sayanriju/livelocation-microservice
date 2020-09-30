@@ -34,7 +34,7 @@ bayeux.on("subscribe", async (clientId, channel) => {
     if (channel !== LIVESTATUS_CHANNEL) return
     const timestamp = Date.now()
     const alives = await store.keys(`${KEY_NAMESPACE}*`)
-    alives.forEach((userId) => faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp }))
+    alives.forEach((key) => faye.publish(LIVESTATUS_CHANNEL, { userId: key.replace(KEY_NAMESPACE, ""), status: "online", timestamp }))
   } catch (e) {
     log.error(e, "[[Subscription ERR]] ")
   }
