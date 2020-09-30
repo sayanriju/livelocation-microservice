@@ -26,6 +26,11 @@ store.on("ready", async () => {
   await store.config("SET", "notify-keyspace-events", "Ex")
 })
 
+function getUserId(needle, haystack) {
+  const regex = new RegExp(`^${needle}`)
+  return haystack.replace(regex, "")
+}
+
 
 /** Send live status of all currently alive users in the beginning, when someone subscribes */
 bayeux.on("subscribe", async (clientId, channel) => {
@@ -34,7 +39,7 @@ bayeux.on("subscribe", async (clientId, channel) => {
     if (channel !== LIVESTATUS_CHANNEL) return
     const timestamp = Date.now()
     const alives = await store.keys(`${KEY_NAMESPACE}*`)
-    alives.forEach((key) => faye.publish(LIVESTATUS_CHANNEL, { userId: key.replace(KEY_NAMESPACE, ""), status: "online", timestamp }))
+    alives.forEach((key) => faye.publish(LIVESTATUS_CHANNEL, { userId: getUserId(KEY_NAMESPACE, key), status: "online", timestamp }))
   } catch (e) {
     log.error(e, "[[Subscription ERR]] ")
   }
@@ -44,7 +49,7 @@ bayeux.on("subscribe", async (clientId, channel) => {
 faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) => {
   try {
     const timestamp = Date.now()
-    const userId = channel.replace(`${HEARTBEAT_CHANNEL}/`, "")
+    const userId = getUserId(`${HEARTBEAT_CHANNEL}/`, channel)
     log.info("==> heartbeat rcvd from userid %s", userId)
     const key = `${KEY_NAMESPACE}${userId}`
     const keyExists = await store.get(key)
@@ -63,7 +68,7 @@ faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) =>
 pubsub.subscribe("__keyevent@0__:expired")
 pubsub.on("message", (channel, message) => {
   const timestamp = Date.now()
-  const userId = message.replace(KEY_NAMESPACE, "")
+  const userId = getUserId(KEY_NAMESPACE, message)
   faye.publish(LIVESTATUS_CHANNEL, { userId, status: "offline", timestamp })
   log.info("==> redis key deleted for userId %s", userId)
 })
