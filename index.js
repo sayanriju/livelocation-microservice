@@ -41,7 +41,7 @@ bayeux.on("subscribe", async (clientId, channel) => {
     const alives = await store.keys(`${KEY_NAMESPACE}*`)
     alives.forEach((key) => faye.publish(LIVESTATUS_CHANNEL, { userId: getUserId(KEY_NAMESPACE, key), status: "online", timestamp }))
   } catch (e) {
-    log.error(e, "[[Subscription ERR]] ")
+    oror(e, "[[Subscription ERR]] ")
   }
 })
 
@@ -60,7 +60,7 @@ faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) =>
       await store.expire(key, KEEP_ALIVE_FOR + LEEWAY_TIME) // live for some more!
     }
   } catch (e) {
-    log.err(e, "[[Hearbeat ERR]]")
+    log.error(e, "[[Hearbeat ERR]]")
   }
 })
 
