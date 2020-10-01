@@ -2,12 +2,12 @@ const http = require("http")
 const Faye = require("faye")
 const Redis = require("ioredis")
 const log = require("book")
+const { addSeconds } = require("date-fns")
 
 const {
   BASE_URL = "http://localhost:3000/",
   REDIS_CONN_STRING = "",
-  KEEP_ALIVE_FOR = 5, // seconds
-  LEEWAY_TIME = 1, // seconds
+  KEEP_ALIVE_FOR = 3, // seconds
   LIVESTATUS_CHANNEL = "/livestatus",
   HEARTBEAT_CHANNEL = "/heartbeat",
   KEY_NAMESPACE = "user:"
@@ -16,62 +16,71 @@ const {
 const bayeux = new Faye.NodeAdapter({ mount: "/" })
 const faye = bayeux.getClient()
 const store = new Redis(REDIS_CONN_STRING)
-const pubsub = new Redis(REDIS_CONN_STRING)
 
 const server = http.createServer()
 bayeux.attach(server)
 
-/** Ensure Redis config is set to enable keyspace notifs */
-store.on("ready", async () => {
-  await store.config("SET", "notify-keyspace-events", "Ex")
-})
-
+/** Lib/Helper functions */
 function getUserId(needle, haystack) {
   const regex = new RegExp(`^${needle}`)
   return haystack.replace(regex, "")
 }
+const isNewId = async (userId) => await store.zrank("online-until", `${KEY_NAMESPACE}${userId}`) === null
+const upsertOnline = async (userId, onlineUntilTimestamp) => store.zadd("online-until", onlineUntilTimestamp, `${KEY_NAMESPACE}${userId}`)
+const getOnlines = async () => {
+  const keys = await store.zrangebyscore("online-until", Date.now(), "+inf")
+  return keys.map((key) => getUserId(KEY_NAMESPACE, key))
+}
+const getOfflines = async () => {
+  const keys = await store.zrangebyscore("online-until", "-inf", Date.now())
+  return keys.map((key) => getUserId(KEY_NAMESPACE, key))
+}
 
 
-/** Send live status of all currently alive users in the beginning, when someone subscribes */
+/** Send live status of all currently alive users in the beginning, whenever someone subscribes */
 bayeux.on("subscribe", async (clientId, channel) => {
   try {
     log.debug("==> client id %s subscribed to channel %s", clientId, channel)
     if (channel !== LIVESTATUS_CHANNEL) return
     const timestamp = Date.now()
-    const alives = await store.keys(`${KEY_NAMESPACE}*`)
-    alives.forEach((key) => faye.publish(LIVESTATUS_CHANNEL, { userId: getUserId(KEY_NAMESPACE, key), status: "online", timestamp }))
+    const onlines = await getOnlines()
+    onlines.forEach((userId) => faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp }))
   } catch (e) {
     log.error(e, "[[Subscription ERR]] ")
   }
 })
 
-/** Handle heartbeats to keep users alive */
+/** Handle heartbeats to keep users alive (and also tell when a user comes online) */
 faye.subscribe(`${HEARTBEAT_CHANNEL}/*`).withChannel(async (channel, message) => {
   try {
     const timestamp = Date.now()
     const userId = getUserId(`${HEARTBEAT_CHANNEL}/`, channel)
     log.info("==> heartbeat rcvd from userid %s", userId)
-    const key = `${KEY_NAMESPACE}${userId}`
-    const keyExists = await store.get(key)
-    if (keyExists === null) { // new Key
-      await store.set(key, 1, "EX", KEEP_ALIVE_FOR + LEEWAY_TIME)
+    if (await isNewId(userId) === true) { // userId just came online
       faye.publish(LIVESTATUS_CHANNEL, { userId, status: "online", timestamp })
-    } else { // existing Key
-      await store.expire(key, KEEP_ALIVE_FOR + LEEWAY_TIME) // live for some more!
     }
+    // heartbeat came, keep the userId alive at least until next heartbeat is expected:
+    await upsertOnline(userId, addSeconds(
+      Date.now(),
+      KEEP_ALIVE_FOR
+    ).valueOf())
   } catch (e) {
-    log.err(e, "[[Hearbeat ERR]]")
+    log.error(e, "[[Hearbeat ERR]]")
   }
 })
 
-/** Tell when an user goes offline */
-pubsub.subscribe("__keyevent@0__:expired")
-pubsub.on("message", (channel, message) => {
-  const timestamp = Date.now()
-  const userId = getUserId(KEY_NAMESPACE, message)
-  faye.publish(LIVESTATUS_CHANNEL, { userId, status: "offline", timestamp })
-  log.info("==> redis key deleted for userId %s", userId)
-})
+/** Tell if one or more users went offline (keep polling) */
+setInterval(async () => {
+  try {
+    const timestamp = Date.now()
+    const offlines = await getOfflines()
+    offlines.forEach((userId) => faye.publish(LIVESTATUS_CHANNEL, { userId, status: "offline", timestamp }))
+    // Purge all those who have just been sent as "offline":
+    if (offlines.length > 0) await store.zrem("online-until", offlines.map((userId) => `${KEY_NAMESPACE}${userId}`))
+  } catch (e) {
+    log.error(e, "[[Offline loop ERR]]")
+  }
+}, (KEEP_ALIVE_FOR) * 1000)
 
 
 server.listen(process.env.PORT || 3000)
